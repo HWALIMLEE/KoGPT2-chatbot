@@ -1,6 +1,6 @@
 import argparse
 import logging
-
+import time
 import gluonnlp as nlp
 import numpy as np
 import pandas as pd
@@ -13,8 +13,10 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.core.lightning import LightningModule
 from torch.utils.data import DataLoader, Dataset
 from transformers.optimization import AdamW, get_cosine_schedule_with_warmup
+import kss
 
 parser = argparse.ArgumentParser(description='Simsimi based on KoGPT-2')
+
 
 parser.add_argument('--chat',
                     action='store_true',
@@ -28,7 +30,7 @@ parser.add_argument('--sentiment',
 
 parser.add_argument('--model_params',
                     type=str,
-                    default='model_chp/model_last.ckpt',
+                    default='./model_chp/model_epoch=86-loss=0.00.ckpt',
                     help='model binary for starting chat')
 
 parser.add_argument('--train',
@@ -127,13 +129,13 @@ class KoGPT2Chat(LightningModule):
         parser = argparse.ArgumentParser(parents=[parent_parser], add_help=False)
         parser.add_argument('--max-len',
                             type=int,
-                            default=32,
-                            help='max sentence length on input (default: 32)')
+                            default = 1000,
+                            help='max sentence length on input (default: 400)')
 
         parser.add_argument('--batch-size',
                             type=int,
-                            default=96,
-                            help='batch size for training (default: 96)')
+                            default = 1,
+                            help='batch size for training (default: 4)')
         parser.add_argument('--lr',
                             type=float,
                             default=5e-5,
@@ -187,10 +189,10 @@ class KoGPT2Chat(LightningModule):
         return torch.LongTensor(data), torch.LongTensor(mask), torch.LongTensor(label)
 
     def train_dataloader(self):
-        data = pd.read_csv('Chatbot_data/ChatbotData.csv')
+        data = pd.read_csv('./naver_worry_finally_5000.csv',encoding='cp949')
         self.train_set = CharDataset(data, self.tok_path, self.vocab, max_len=self.hparams.max_len)
         train_dataloader = DataLoader(
-            self.train_set, batch_size=self.hparams.batch_size, num_workers=2,
+            self.train_set, batch_size=self.hparams.batch_size, num_workers=0,
             shuffle=True, collate_fn=self._collate_fn)
         return train_dataloader
 
@@ -206,6 +208,7 @@ class KoGPT2Chat(LightningModule):
                 q_tok = tok(q)
                 a = ''
                 a_tok = []
+                timeout = time.time() + 60
                 while 1:
                     input_ids = torch.LongTensor([
                         self.vocab[U_TKN]] + self.vocab[q_tok] +
@@ -221,7 +224,25 @@ class KoGPT2Chat(LightningModule):
                         break
                     a += gen.replace('▁', ' ')
                     a_tok = tok(a)
-                print("Simsimi > {}".format(a.strip()))
+                    if time.time() > timeout:
+                        break
+                answer_list = kss.split_sentences(a)[1:-2]
+                Simsimi_answer = "".join(answer_list)
+                sentence_list = Simsimi_answer.split('.')
+                sentences=[]
+                for s in sentence_list:
+                    word_list = s.split()#리스트
+                    # sentences=[]
+                    for word in word_list:
+                        if word.endswith('*님이')==True:
+                            word_list[word_list.index(word)]= word.replace(word,"상담자님이")
+                            # print(word)
+                        else:
+                            pass
+                    sentence = " ".join(word_list)
+                    sentences.append(sentence)
+                    # print(sentence)        
+                print("Simsimi > ", ".".join(sentences))
 
 
 parser = KoGPT2Chat.add_model_specific_args(parser)
@@ -237,7 +258,7 @@ if __name__ == "__main__":
             save_last=True,
             monitor='loss',
             mode='min',
-            prefix='model_'
+            prefix='model_preprocessing'
         )
         # python train_torch.py --train --gpus 1 --max_epochs 3
         model = KoGPT2Chat(args)
