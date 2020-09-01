@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import argparse
 import logging
 import time
@@ -94,10 +95,15 @@ class CharDataset(Dataset):
         ]
         a_len = len(a_toked)
         if q_len + a_len > self.max_len:
-            remains = self.max_len - q_len
-            a_len = remains
-            a_toked = a_toked[-a_len:]
-            assert a_len == len(a_toked)
+            a_len = self.max_len - q_len
+            if a_len <= 0:
+                q_toked = q_toked[-(int(self.max_len/2)):]
+                q_len = len(q_toked)
+                a_len = self.max_len - q_len
+                assert a_len > 0
+            a_toked = a_toked[:a_len]
+            a_len = len(a_toked)
+            assert a_len == len(a_toked), f'{a_len} ==? {len(a_toked)}'
         # [mask, mask, ...., mask, ..., <bos>,..A.. <eos>, <pad>....]
         labels = [
             self.maskt,
